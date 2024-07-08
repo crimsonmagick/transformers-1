@@ -1,5 +1,8 @@
 import logging
 import sys
+
+from transformers import TextStreamer
+
 from .model_util import get_model_loader, ModelLoader
 from profiling import profile
 
@@ -18,6 +21,7 @@ def main():
         model_loader: ModelLoader = get_model_loader(MODEL_ID)
     
     model, tokenizer = profile(model_loader.load_model)
+    streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
     
     if next(model.parameters()).is_cuda:
         logger.info("Model loaded by pipeline is running on CUDA")
@@ -34,12 +38,12 @@ def main():
         tokenizer.eos_token_id,
         tokenizer.convert_tokens_to_ids("<|eot_id|>")
     ]
-    
+    device = model.model.device
     input_ids = tokenizer.apply_chat_template(
         messages,
         add_generation_prompt=True,
         return_tensors="pt"
-    ).to(model.device)
+    ).to(device)
     
     outputs = profile(model.generate,
                       input_ids,
@@ -48,6 +52,7 @@ def main():
                       do_sample=True,
                       temperature=0.6,
                       top_p=0.9,
+                      streamer=streamer
                       )
     
     tokenized_response = outputs[0][input_ids.shape[-1]:]
